@@ -1,20 +1,18 @@
-var XMLNS_WB = [
-	'http://schemas.openxmlformats.org/spreadsheetml/2006/main',
-	'http://schemas.microsoft.com/office/excel/2006/main',
-	'http://schemas.microsoft.com/office/excel/2006/2'
-];
-
 /* 18.2 Workbook */
-function parse_wb_xml(data) {
+var wbnsregex = /<\w+:workbook/;
+function parse_wb_xml(data, opts) {
 	var wb = { AppVersion:{}, WBProps:{}, WBView:[], Sheets:[], CalcPr:{}, xmlns: "" };
-	var pass = false;
-	data.match(/<[^>]*>/g).forEach(function(x) {
+	var pass = false, xmlns = "xmlns";
+	data.match(tagregex).forEach(function xml_wb(x) {
 		var y = parsexmltag(x);
-		switch(y[0]) {
+		switch(strip_ns(y[0])) {
 			case '<?xml': break;
 
 			/* 18.2.27 workbook CT_Workbook 1 */
-			case '<workbook': wb.xmlns = y.xmlns; break;
+			case '<workbook':
+				if(x.match(wbnsregex)) xmlns = "xmlns" + x.match(/<(\w+):/)[1];
+				wb.xmlns = y[xmlns];
+				break;
 			case '</workbook>': break;
 
 			/* 18.2.13 fileVersion CT_FileVersion ? */
@@ -29,6 +27,7 @@ function parse_wb_xml(data) {
 			case '<workbookPr/>': delete y[0]; wb.WBProps = y; break;
 
 			/* 18.2.29 workbookProtection CT_WorkbookProtection ? */
+			case '<workbookProtection': break;
 			case '<workbookProtection/>': break;
 
 			/* 18.2.1  bookViews CT_BookViews ? */
@@ -47,13 +46,13 @@ function parse_wb_xml(data) {
 			case '<functionGroup': break;
 
 			/* 18.2.9  externalReferences CT_ExternalReferences ? */
-			case '<externalReferences': case '</externalReferences>': break;
+			case '<externalReferences': case '</externalReferences>': case '<externalReferences>': break;
 			/* 18.2.8    externalReference CT_ExternalReference + */
 			case '<externalReference': break;
 
 			/* 18.2.6  definedNames CT_DefinedNames ? */
 			case '<definedNames/>': break;
-			case '<definedNames>': pass=true; break;
+			case '<definedNames>': case '<definedNames': pass=true; break;
 			case '</definedNames>': pass=false; break;
 			/* 18.2.5    definedName CT_DefinedName + */
 			case '<definedName': case '<definedName/>': case '</definedName>': break;
@@ -101,23 +100,40 @@ function parse_wb_xml(data) {
 			case '</ext>': pass=false; break;
 
 			/* Others */
-			case '<mx:ArchID': break;
-			case '<mc:AlternateContent': pass=true; break;
-			case '</mc:AlternateContent>': pass=false; break;
+			case '<ArchID': break;
+			case '<AlternateContent': pass=true; break;
+			case '</AlternateContent>': pass=false; break;
+
+			default: if(!pass && opts.WTF) throw 'unrecognized ' + y[0] + ' in workbook';
 		}
 	});
-	if(XMLNS_WB.indexOf(wb.xmlns) === -1) throw new Error("Unknown Namespace: " + wb.xmlns);
+	if(XMLNS.main.indexOf(wb.xmlns) === -1) throw new Error("Unknown Namespace: " + wb.xmlns);
 
-	var z;
-	/* defaults */
-	for(z in WBPropsDef) if(typeof wb.WBProps[z] === 'undefined') wb.WBProps[z] = WBPropsDef[z];
-	for(z in CalcPrDef) if(typeof wb.CalcPr[z] === 'undefined') wb.CalcPr[z] = CalcPrDef[z];
-
-	wb.WBView.forEach(function(w){for(var z in WBViewDef) if(typeof w[z] === 'undefined') w[z]=WBViewDef[z]; });
-	wb.Sheets.forEach(function(w){for(var z in SheetDef) if(typeof w[z] === 'undefined') w[z]=SheetDef[z]; });
-
-	_ssfopts.date1904 = parsexmlbool(wb.WBProps.date1904, 'date1904');
+	parse_wb_defaults(wb);
 
 	return wb;
 }
 
+var WB_XML_ROOT = writextag('workbook', null, {
+	'xmlns': XMLNS.main[0],
+	//'xmlns:mx': XMLNS.mx,
+	//'xmlns:s': XMLNS.main[0],
+	'xmlns:r': XMLNS.r
+});
+
+function safe1904(wb) {
+	/* TODO: store date1904 somewhere else */
+	try { return parsexmlbool(wb.Workbook.WBProps.date1904) ? "true" : "false"; } catch(e) { return "false"; }
+}
+
+function write_wb_xml(wb, opts) {
+	var o = [XML_HEADER];
+	o[o.length] = WB_XML_ROOT;
+	o[o.length] = (writextag('workbookPr', null, {date1904:safe1904(wb)}));
+	o[o.length] = "<sheets>";
+	for(var i = 0; i != wb.SheetNames.length; ++i)
+		o[o.length] = (writextag('sheet',null,{name:wb.SheetNames[i].substr(0,31), sheetId:""+(i+1), "r:id":"rId"+(i+1)}));
+	o[o.length] = "</sheets>";
+	if(o.length>2){ o[o.length] = '</workbook>'; o[1]=o[1].replace("/>",">"); }
+	return o.join("");
+}
