@@ -488,9 +488,7 @@ make_ssf(SSF);
 var XLSX = {};
 (function(XLSX){
 XLSX.version = '0.5.15';
-// What is this?
 var current_codepage, current_cptable, cptable;
-/*
 if(typeof module !== "undefined" && typeof require !== 'undefined') {
 	if(typeof cptable === 'undefined') cptable = require('codepage');
 	current_codepage = 1252; current_cptable = cptable[1252];
@@ -499,7 +497,8 @@ function reset_cp() {
 	current_codepage = 1252; if(typeof cptable !== 'undefined') current_cptable = cptable[1252];
 }
 function _getchar(x) { return String.fromCharCode(x); }
-*/function getdata(data) {
+
+function getdata(data) {
 	if(!data) return null;
 	if(data.data) return data.name.substr(-4) !== ".bin" ? data.data : data.data.split("").map(function(x) { return x.charCodeAt(0); });
 	if(data.asNodeBuffer && typeof Buffer !== 'undefined' && data.name.substr(-4)===".bin") return data.asNodeBuffer();
